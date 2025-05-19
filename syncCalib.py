@@ -2,6 +2,7 @@ import cv2 as cv
 import numpy as np
 import glob
 
+
 def calibrate_stereo_cameras(left_images_folder, right_images_folder):
 
     c1_images = []
@@ -34,8 +35,10 @@ def calibrate_stereo_cameras(left_images_folder, right_images_folder):
     for frame1, frame2 in zip(c1_images, c2_images):
         gray1 = cv.cvtColor(frame1, cv.COLOR_BGR2GRAY)
         gray2 = cv.cvtColor(frame2, cv.COLOR_BGR2GRAY)
-        c_ret1, corners1 = cv.findChessboardCorners(gray1, (rows, columns), None)
-        c_ret2, corners2 = cv.findChessboardCorners(gray2, (rows, columns), None)
+        c_ret1, corners1 = cv.findChessboardCorners(
+            gray1, (rows, columns), None)
+        c_ret2, corners2 = cv.findChessboardCorners(
+            gray2, (rows, columns), None)
 
         if c_ret1 == True and c_ret2 == True:
             corners1 = cv.cornerSubPix(
@@ -67,14 +70,36 @@ def calibrate_stereo_cameras(left_images_folder, right_images_folder):
     ret, CM1, dist1, CM2, dist2, R, T, E, F = cv.stereoCalibrate(
         objpoints, imgpoints_left, imgpoints_right, mtx1, dist1, mtx2, dist2, (width, height), criteria=criteria, flags=stereocalibration_flags)
 
-    # Save all the parameters in a file for later use
+    # Compute the rectification transformation
+    rectify_scale = 1
+
+
+    rect_l, rect_r, proj_mat_l, proj_mat_r, Q, roiL, roiR = cv.stereoRectify(
+        CM1, dist1, CM2, dist2, gray1.shape[::-1], R, T, rectify_scale, (0, 0))
+    
+    Left_Stereo_Map= cv.initUndistortRectifyMap(CM1, dist1, rect_l, proj_mat_l,
+                                             gray1.shape[::-1], cv.CV_16SC2)
+    Right_Stereo_Map= cv.initUndistortRectifyMap(CM2, dist2, rect_r, proj_mat_r,
+                                                gray2.shape[::-1], cv.CV_16SC2)
+    
     filename = 'stereo_camera_calibration.npz'
     try:
-        np.savez(filename, ret=ret, CM1=CM1, dist1=dist1,
-                 CM2=CM2, dist2=dist2, R=R, T=T, E=E, F=F)
+            np.savez(filename, ret=ret, CM1=CM1, dist1=dist1,
+                    CM2=CM2, dist2=dist2, R=R, T=T, E=E, F=F)
     except Exception as e:
         print("Error saving stereo calibration parameters: ", e)
-    
+
+    print("Saving paraeters ......")
+    param_file = 'improved_params.xml'
+    try:
+        cv_file = cv.FileStorage(param_file, cv.FILE_STORAGE_WRITE)
+        cv_file.write("Left_Stereo_Map_x",Left_Stereo_Map[0])
+        cv_file.write("Left_Stereo_Map_y",Left_Stereo_Map[1])
+        cv_file.write("Right_Stereo_Map_x",Right_Stereo_Map[0])
+        cv_file.write("Right_Stereo_Map_y",Right_Stereo_Map[1])
+        cv_file.release()
+    except Exception as e:
+         pass
     return R, T
 
 if __name__ == "__main__":
@@ -82,4 +107,3 @@ if __name__ == "__main__":
     left_images_names = sorted(glob.glob("images/synched/L_*.png"))
     right_images_names = sorted(glob.glob("images/synched/R_*.png"))
     R, T = calibrate_stereo_cameras(left_images_names, right_images_names)
-
